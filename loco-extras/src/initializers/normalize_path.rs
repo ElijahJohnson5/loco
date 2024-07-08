@@ -23,12 +23,12 @@ use tower_http::normalize_path::NormalizePathLayer;
 pub struct NormalizePathInitializer;
 
 #[async_trait]
-impl Initializer for NormalizePathInitializer {
+impl<T: Send + Sync + Clone> Initializer<T> for NormalizePathInitializer {
     fn name(&self) -> String {
         "normalize-path".to_string()
     }
 
-    async fn after_routes(&self, router: Router, _ctx: &AppContext) -> Result<Router> {
+    async fn after_routes(&self, router: Router, _ctx: &AppContext<T>) -> Result<Router> {
         let router = NormalizePathLayer::trim_trailing_slash().layer(router);
         let router = Router::new().nest_service("", router);
         Ok(router)

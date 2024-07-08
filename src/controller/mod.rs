@@ -35,31 +35,32 @@
 //!
 //! #[async_trait]
 //! impl Hooks for App {
+//!     type ExtraAppContext = ();
 //!
 //!    fn app_name() -> &'static str {
 //!        env!("CARGO_CRATE_NAME")
 //!    }
 //!
-//!     fn routes(ctx: &AppContext) -> AppRoutes {
+//!     fn routes(ctx: &AppContext<Self::ExtraAppContext>) -> AppRoutes<Self::ExtraAppContext> {
 //!         AppRoutes::with_default_routes()
 //!             // .add_route(controllers::notes::routes())
 //!     }
 //!     
-//!     async fn boot(mode: StartMode, environment: &Environment) -> Result<BootResult>{
+//!     async fn boot(mode: StartMode, environment: &Environment) -> Result<BootResult<Self::ExtraAppContext>>{
 //!          create_app::<Self, Migrator>(mode, environment).await
 //!     }
 //!     
 //!     #[cfg(feature = "channels")]
 //!    /// Only when `channels` feature is enabled
-//!    fn register_channels(_ctx: &AppContext) -> AppChannels {
+//!    fn register_channels(_ctx: &AppContext<Self::ExtraAppContext>) -> AppChannels<Self::ExtraAppContext> {
 //!        let channels = AppChannels::default();
 //!        //channels.register.ns("/", channels::application::on_connect);
 //!        channels
 //!    }
 //!
-//!     fn connect_workers<'a>(p: &'a mut Processor, ctx: &'a AppContext) {}
+//!     fn connect_workers<'a>(p: &'a mut Processor, ctx: &'a AppContext<Self::ExtraAppContext>) {}
 //!
-//!     fn register_tasks(tasks: &mut Tasks) {}
+//!     fn register_tasks(tasks: &mut Tasks<Self::ExtraAppContext>) {}
 //!
 //!     async fn truncate(db: &DatabaseConnection) -> Result<()> {
 //!         Ok(())

@@ -26,13 +26,14 @@ pub fn get_queues(config_queues: &Option<Vec<String>>) -> Vec<String> {
 
 #[async_trait]
 #[allow(clippy::module_name_repetitions)]
-pub trait AppWorker<T>: Worker<T>
+pub trait AppWorker<T, E>: Worker<T>
 where
     Self: Sized,
     T: Send + Sync + serde::Serialize + 'static,
+    E: Send + Sync + Clone + 'static,
 {
-    fn build(ctx: &AppContext) -> Self;
-    async fn perform_later(ctx: &AppContext, args: T) -> Result<()> {
+    fn build(ctx: &AppContext<E>) -> Self;
+    async fn perform_later(ctx: &AppContext<E>, args: T) -> Result<()> {
         match &ctx.config.workers.mode {
             WorkerMode::BackgroundQueue => {
                 if let Some(queue) = &ctx.queue {

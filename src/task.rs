@@ -71,20 +71,27 @@ pub struct TaskInfo {
 
 /// A trait defining the behavior of a task.
 #[async_trait]
-pub trait Task: Send + Sync {
+pub trait Task<T: Send + Sync + Clone>: Send + Sync {
     /// Get information about the task.
     fn task(&self) -> TaskInfo;
     /// Execute the task with the provided application context and variables.
-    async fn run(&self, app_context: &AppContext, vars: &Vars) -> Result<()>;
+    async fn run(&self, app_context: &AppContext<T>, vars: &Vars) -> Result<()>;
 }
 
 /// Managing and running tasks.
-#[derive(Default)]
-pub struct Tasks {
-    registry: BTreeMap<String, Box<dyn Task>>,
+pub struct Tasks<T: Send + Sync + Clone> {
+    registry: BTreeMap<String, Box<dyn Task<T>>>,
 }
 
-impl Tasks {
+impl<T: Send + Sync + Clone> Default for Tasks<T> {
+    fn default() -> Self {
+        Self {
+            registry: Default::default(),
+        }
+    }
+}
+
+impl<T: Send + Sync + Clone> Tasks<T> {
     /// List all registered tasks with their information.
     #[must_use]
     pub fn list(&self) -> Vec<TaskInfo> {
@@ -97,7 +104,7 @@ impl Tasks {
     ///
     /// Returns a [`Result`] if an task finished with error. mostly if the given
     /// task is not found or an error to run the task.s
-    pub async fn run(&self, app_context: &AppContext, task: &str, vars: &Vars) -> Result<()> {
+    pub async fn run(&self, app_context: &AppContext<T>, task: &str, vars: &Vars) -> Result<()> {
         let task = self
             .registry
             .get(task)
@@ -107,7 +114,7 @@ impl Tasks {
     }
 
     /// Register a new task to the registry.
-    pub fn register(&mut self, task: impl Task + 'static) {
+    pub fn register(&mut self, task: impl Task<T> + 'static) {
         let name = task.task().name;
         self.registry.insert(name, Box::new(task));
     }

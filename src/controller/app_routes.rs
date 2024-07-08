@@ -36,20 +36,20 @@ lazy_static! {
 
 /// Represents the routes of the application.
 #[derive(Clone)]
-pub struct AppRoutes {
+pub struct AppRoutes<T: Send + Sync + Clone> {
     prefix: Option<String>,
-    routes: Vec<Routes>,
+    routes: Vec<Routes<T>>,
     #[cfg(feature = "channels")]
     channels: Option<AppChannels>,
 }
 
-pub struct ListRoutes {
+pub struct ListRoutes<T: Send + Sync + Clone> {
     pub uri: String,
     pub actions: Vec<axum::http::Method>,
-    pub method: axum::routing::MethodRouter<AppContext>,
+    pub method: axum::routing::MethodRouter<AppContext<T>>,
 }
 
-impl fmt::Display for ListRoutes {
+impl<T: Send + Sync + Clone> fmt::Display for ListRoutes<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let actions_str = self
             .actions
@@ -62,7 +62,7 @@ impl fmt::Display for ListRoutes {
     }
 }
 
-impl AppRoutes {
+impl<T: Send + Sync + Clone + 'static> AppRoutes<T> {
     /// Create a new instance with the default routes.
     #[must_use]
     pub fn with_default_routes() -> Self {
@@ -85,7 +85,7 @@ impl AppRoutes {
     }
 
     #[must_use]
-    pub fn collect(&self) -> Vec<ListRoutes> {
+    pub fn collect(&self) -> Vec<ListRoutes<T>> {
         let base_url_prefix = self.get_prefix().map_or("/", |url| url.as_str());
 
         self.get_routes()
@@ -126,7 +126,7 @@ impl AppRoutes {
 
     /// Get the routes.
     #[must_use]
-    pub fn get_routes(&self) -> &[Routes] {
+    pub fn get_routes(&self) -> &[Routes<T>] {
         self.routes.as_ref()
     }
 
@@ -140,7 +140,7 @@ impl AppRoutes {
     /// ```rust
     /// use loco_rs::controller::AppRoutes;
     ///
-    /// AppRoutes::with_default_routes().prefix("api");
+    /// AppRoutes::<()>::with_default_routes().prefix("api");
     /// ```
     #[must_use]
     pub fn prefix(mut self, prefix: &str) -> Self {
@@ -150,14 +150,14 @@ impl AppRoutes {
 
     /// Add a single route.
     #[must_use]
-    pub fn add_route(mut self, route: Routes) -> Self {
+    pub fn add_route(mut self, route: Routes<T>) -> Self {
         self.routes.push(route);
         self
     }
 
     /// Add multiple routes.
     #[must_use]
-    pub fn add_routes(mut self, mounts: Vec<Routes>) -> Self {
+    pub fn add_routes(mut self, mounts: Vec<Routes<T>>) -> Self {
         for mount in mounts {
             self.routes.push(mount);
         }
@@ -178,7 +178,7 @@ impl AppRoutes {
     /// Return an [`Result`] when could not convert the router setup to
     /// [`axum::Router`].
     #[allow(clippy::cognitive_complexity)]
-    pub fn to_router(&self, ctx: AppContext) -> Result<AXRouter> {
+    pub fn to_router(&self, ctx: AppContext<T>) -> Result<AXRouter> {
         let mut app = AXRouter::new();
 
         for router in self.collect() {
@@ -270,9 +270,9 @@ impl AppRoutes {
     }
 
     fn add_static_asset_middleware(
-        app: AXRouter<AppContext>,
+        app: AXRouter<AppContext<T>>,
         config: &config::StaticAssetsMiddleware,
-    ) -> Result<AXRouter<AppContext>> {
+    ) -> Result<AXRouter<AppContext<T>>> {
         if config.must_exist
             && (!PathBuf::from(&config.folder.path).exists()
                 || !PathBuf::from(&config.fallback).exists())
@@ -297,13 +297,13 @@ impl AppRoutes {
         ))
     }
 
-    fn add_compression_middleware(app: AXRouter<AppContext>) -> AXRouter<AppContext> {
+    fn add_compression_middleware(app: AXRouter<AppContext<T>>) -> AXRouter<AppContext<T>> {
         let app = app.layer(CompressionLayer::new());
         tracing::info!("[Middleware] Adding compression layer");
         app
     }
 
-    fn add_etag_middleware(app: AXRouter<AppContext>) -> AXRouter<AppContext> {
+    fn add_etag_middleware(app: AXRouter<AppContext<T>>) -> AXRouter<AppContext<T>> {
         let app = app.layer(EtagLayer::new());
         tracing::info!("[Middleware] Adding etag layer");
         app
@@ -347,14 +347,14 @@ impl AppRoutes {
         Ok(cors)
     }
 
-    fn add_catch_panic(app: AXRouter<AppContext>) -> AXRouter<AppContext> {
+    fn add_catch_panic(app: AXRouter<AppContext<T>>) -> AXRouter<AppContext<T>> {
         app.layer(CatchPanicLayer::custom(handle_panic))
     }
 
     fn add_limit_payload_middleware(
-        app: AXRouter<AppContext>,
+        app: AXRouter<AppContext<T>>,
         limit: &config::LimitPayloadMiddleware,
-    ) -> Result<AXRouter<AppContext>> {
+    ) -> Result<AXRouter<AppContext<T>>> {
         let app = app.layer(axum::extract::DefaultBodyLimit::max(
             byte_unit::Byte::from_str(&limit.body_limit)
                 .map_err(Box::from)?
@@ -368,9 +368,9 @@ impl AppRoutes {
         Ok(app)
     }
     fn add_logger_middleware(
-        app: AXRouter<AppContext>,
+        app: AXRouter<AppContext<T>>,
         environment: &Environment,
-    ) -> AXRouter<AppContext> {
+    ) -> AXRouter<AppContext<T>> {
         let app = app
             .layer(
                 TraceLayer::new_for_http().make_span_with(|request: &http::Request<_>| {
@@ -404,9 +404,9 @@ impl AppRoutes {
     }
 
     fn add_timeout_middleware(
-        app: AXRouter<AppContext>,
+        app: AXRouter<AppContext<T>>,
         config: &config::TimeoutRequestMiddleware,
-    ) -> AXRouter<AppContext> {
+    ) -> AXRouter<AppContext<T>> {
         let app = app.layer(TimeoutLayer::new(Duration::from_millis(config.timeout)));
 
         tracing::info!("[Middleware] Adding timeout layer");
@@ -414,9 +414,9 @@ impl AppRoutes {
     }
 
     fn add_powered_by_header(
-        app: AXRouter<AppContext>,
+        app: AXRouter<AppContext<T>>,
         config: &config::Server,
-    ) -> AXRouter<AppContext> {
+    ) -> AXRouter<AppContext<T>> {
         let ident_value = config.ident.as_ref().map_or_else(
             || Some(DEFAULT_IDENT_HEADER_VALUE.clone()),
             |ident| {

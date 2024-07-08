@@ -20,6 +20,6 @@ async fn ping() -> Result<Response> {
 }
 
 /// Defines and returns the health-related routes.
-pub fn routes() -> Routes {
+pub fn routes<T: Send + Sync + Clone + 'static>() -> Routes<T> {
     Routes::new().add("/_ping", get(ping))
 }

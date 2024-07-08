@@ -6,12 +6,12 @@ use loco_rs::{db, errors::Error, prelude::*};
 pub struct MultiDbInitializer;
 
 #[async_trait]
-impl Initializer for MultiDbInitializer {
+impl<T: Send + Sync + Clone> Initializer<T> for MultiDbInitializer {
     fn name(&self) -> String {
         "multi-db".to_string()
     }
 
-    async fn after_routes(&self, router: AxumRouter, ctx: &AppContext) -> Result<AxumRouter> {
+    async fn after_routes(&self, router: AxumRouter, ctx: &AppContext<T>) -> Result<AxumRouter> {
         let settings = ctx
             .config
             .initializers

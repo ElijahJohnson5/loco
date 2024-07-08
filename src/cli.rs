@@ -250,7 +250,7 @@ where
 /// # Errors
 ///
 /// When could not create app context
-pub async fn playground<H: Hooks>() -> crate::Result<AppContext> {
+pub async fn playground<H: Hooks>() -> crate::Result<AppContext<H::ExtraAppContext>> {
     let cli = Playground::parse();
     let environment: Environment = cli.environment.unwrap_or_else(resolve_from_env).into();
 
@@ -417,7 +417,7 @@ pub async fn main<H: Hooks>() -> eyre::Result<()> {
     Ok(())
 }
 
-fn show_list_endpoints<H: Hooks>(ctx: &AppContext) {
+fn show_list_endpoints<H: Hooks>(ctx: &AppContext<H::ExtraAppContext>) {
     let mut routes = list_endpoints::<H>(ctx);
     routes.sort_by(|a, b| a.uri.cmp(&b.uri));
     for router in routes {

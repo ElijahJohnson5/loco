@@ -7,12 +7,12 @@ use mongodb::{bson::doc, options::ClientOptions, Client, Database};
 pub struct MongoDbInitializer;
 
 #[async_trait]
-impl Initializer for MongoDbInitializer {
+impl<T: Send + Sync + Clone> Initializer<T> for MongoDbInitializer {
     fn name(&self) -> String {
         "mongodb".to_string()
     }
 
-    async fn after_routes(&self, router: AxumRouter, ctx: &AppContext) -> Result<AxumRouter> {
+    async fn after_routes(&self, router: AxumRouter, ctx: &AppContext<T>) -> Result<AxumRouter> {
         let mongo_db_config = ctx
             .config
             .initializers

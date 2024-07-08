@@ -34,9 +34,9 @@ pub enum StartMode {
     /// Pulling job worker and execute them
     WorkerOnly,
 }
-pub struct BootResult {
+pub struct BootResult<T: Send + Sync + Clone> {
     /// Application Context
-    pub app_context: AppContext,
+    pub app_context: AppContext<T>,
     /// Web server routes
     pub router: Option<Router>,
     /// worker processor
@@ -61,7 +61,10 @@ pub struct ServeParams {
 /// # Errors
 ///
 /// When could not initialize the application.
-pub async fn start<H: Hooks>(boot: BootResult, server_config: ServeParams) -> Result<()> {
+pub async fn start<H: Hooks>(
+    boot: BootResult<H::ExtraAppContext>,
+    server_config: ServeParams,
+) -> Result<()> {
     print_banner(&boot, &server_config);
 
     let BootResult {
@@ -101,11 +104,11 @@ async fn process(processor: Processor) -> Result<()> {
 ///
 /// When running could not run the task.
 pub async fn run_task<H: Hooks>(
-    app_context: &AppContext,
+    app_context: &AppContext<H::ExtraAppContext>,
     task: Option<&String>,
     vars: &task::Vars,
 ) -> Result<()> {
-    let mut tasks = Tasks::default();
+    let mut tasks = Tasks::<H::ExtraAppContext>::default();
     H::register_tasks(&mut tasks);
 
     if let Some(task) = task {
@@ -145,7 +148,7 @@ pub enum RunDbCommand {
 /// Return an error when the given command fails. mostly return
 /// [`sea_orm::DbErr`]
 pub async fn run_db<H: Hooks, M: MigratorTrait>(
-    app_context: &AppContext,
+    app_context: &AppContext<H::ExtraAppContext>,
     cmd: RunDbCommand,
 ) -> Result<()> {
     match cmd {
@@ -164,7 +167,10 @@ pub async fn run_db<H: Hooks, M: MigratorTrait>(
         RunDbCommand::Entities => {
             tracing::warn!("entities:");
 
-            tracing::warn!("{}", db::entities::<M>(app_context).await?);
+            tracing::warn!(
+                "{}",
+                db::entities::<H::ExtraAppContext, M>(app_context).await?
+            );
         }
         RunDbCommand::Truncate => {
             tracing::warn!("truncate:");
@@ -179,7 +185,9 @@ pub async fn run_db<H: Hooks, M: MigratorTrait>(
 ///
 /// # Errors
 /// When has an error to create DB connection.
-pub async fn create_context<H: Hooks>(environment: &Environment) -> Result<AppContext> {
+pub async fn create_context<H: Hooks>(
+    environment: &Environment,
+) -> Result<AppContext<H::ExtraAppContext>> {
     let config = environment.load()?;
 
     if config.logger.pretty_backtrace {
@@ -207,6 +215,7 @@ pub async fn create_context<H: Hooks>(environment: &Environment) -> Result<AppCo
         cache: cache::Cache::new(cache::drivers::null::new()).into(),
         config,
         mailer,
+        extra: None,
     };
 
     H::after_context(ctx).await
@@ -221,7 +230,7 @@ pub async fn create_context<H: Hooks>(environment: &Environment) -> Result<AppCo
 pub async fn create_app<H: Hooks, M: MigratorTrait>(
     mode: StartMode,
     environment: &Environment,
-) -> Result<BootResult> {
+) -> Result<BootResult<H::ExtraAppContext>> {
     let app_context = create_context::<H>(environment).await?;
     db::converge::<H, M>(&app_context.db, &app_context.config.database).await?;
 
@@ -236,7 +245,7 @@ pub async fn create_app<H: Hooks, M: MigratorTrait>(
 pub async fn create_app<H: Hooks>(
     mode: StartMode,
     environment: &Environment,
-) -> Result<BootResult> {
+) -> Result<BootResult<H::ExtraAppContext>> {
     let app_context = create_context::<H>(environment).await?;
 
     if let Some(pool) = &app_context.queue {
@@ -250,7 +259,10 @@ pub async fn create_app<H: Hooks>(
 /// # Errors
 ///
 /// When could not create the application
-pub async fn run_app<H: Hooks>(mode: &StartMode, app_context: AppContext) -> Result<BootResult> {
+pub async fn run_app<H: Hooks>(
+    mode: &StartMode,
+    app_context: AppContext<H::ExtraAppContext>,
+) -> Result<BootResult<H::ExtraAppContext>> {
     H::before_run(&app_context).await?;
     let initializers = H::initializers(&app_context).await?;
     info!(initializers = ?initializers.iter().map(|init| init.name()).collect::<Vec<_>>().join(","), "initializers loaded");
@@ -295,7 +307,7 @@ pub async fn run_app<H: Hooks>(mode: &StartMode, app_context: AppContext) -> Res
     }
 }
 /// Creates and configures a [`Processor`] for handling worker tasks.
-fn create_processor<H: Hooks>(app_context: &AppContext) -> Result<Processor> {
+fn create_processor<H: Hooks>(app_context: &AppContext<H::ExtraAppContext>) -> Result<Processor> {
     let queues = worker::get_queues(&app_context.config.workers.queues);
     trace!(
         queues = ?queues,
@@ -323,7 +335,9 @@ fn create_processor<H: Hooks>(app_context: &AppContext) -> Result<Processor> {
 }
 
 #[must_use]
-pub fn list_endpoints<H: Hooks>(ctx: &AppContext) -> Vec<ListRoutes> {
+pub fn list_endpoints<H: Hooks>(
+    ctx: &AppContext<H::ExtraAppContext>,
+) -> Vec<ListRoutes<H::ExtraAppContext>> {
     H::routes(ctx).collect()
 }
 

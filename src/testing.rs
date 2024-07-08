@@ -119,7 +119,7 @@ pub fn cleanup_email() -> Vec<(&'static str, &'static str)> {
 ///     assert!(false)
 /// }
 /// ```
-pub async fn boot_test<H: Hooks>() -> Result<BootResult> {
+pub async fn boot_test<H: Hooks>() -> Result<BootResult<H::ExtraAppContext>> {
     H::boot(boot::StartMode::ServerOnly, &Environment::Test).await
 }
 
@@ -189,7 +189,7 @@ pub async fn seed<H: Hooks>(db: &DatabaseConnection) -> eyre::Result<()> {
 #[allow(clippy::future_not_send)]
 pub async fn request<H: Hooks, F, Fut>(callback: F)
 where
-    F: FnOnce(TestServer, AppContext) -> Fut,
+    F: FnOnce(TestServer, AppContext<H::ExtraAppContext>) -> Fut,
     Fut: std::future::Future<Output = ()>,
 {
     let boot = boot_test::<H>().await.unwrap();

@@ -60,7 +60,7 @@ pub struct MailerOpts {
 /// The `Mailer` trait defines methods for sending emails and processing email
 /// templates.
 #[async_trait]
-pub trait Mailer {
+pub trait Mailer<T: Send + Sync + Clone + 'static> {
     /// Returns default options for the mailer.
     #[must_use]
     fn opts() -> MailerOpts {
@@ -71,7 +71,7 @@ pub trait Mailer {
     }
 
     /// Sends an email using the provided [`AppContext`] and email details.
-    async fn mail(ctx: &AppContext, email: &Email) -> Result<()> {
+    async fn mail(ctx: &AppContext<T>, email: &Email) -> Result<()> {
         let opts = Self::opts();
         let mut email = email.clone();
 
@@ -86,7 +86,7 @@ pub trait Mailer {
 
     /// Renders and sends an email using the provided [`AppContext`], template
     /// directory, and arguments.
-    async fn mail_template(ctx: &AppContext, dir: &Dir<'_>, args: Args) -> Result<()> {
+    async fn mail_template(ctx: &AppContext<T>, dir: &Dir<'_>, args: Args) -> Result<()> {
         let content = Template::new(dir).render(&args.locals)?;
         Self::mail(
             ctx,
@@ -108,20 +108,20 @@ pub trait Mailer {
 /// The [`MailerWorker`] struct represents a worker responsible for asynchronous
 /// email processing.
 #[allow(clippy::module_name_repetitions)]
-pub struct MailerWorker {
-    pub ctx: AppContext,
+pub struct MailerWorker<T: Send + Sync + Clone> {
+    pub ctx: AppContext<T>,
 }
 
 /// Implementation of the `AppWorker` trait for the [`MailerWorker`].
-impl AppWorker<Email> for MailerWorker {
-    fn build(ctx: &AppContext) -> Self {
+impl<T: Send + Sync + Clone + 'static> AppWorker<Email, T> for MailerWorker<T> {
+    fn build(ctx: &AppContext<T>) -> Self {
         Self { ctx: ctx.clone() }
     }
 }
 
 /// Implementation of the [`Worker`] trait for the [`MailerWorker`].
 #[async_trait]
-impl Worker<Email> for MailerWorker {
+impl<T: Send + Sync + Clone> Worker<Email> for MailerWorker<T> {
     /// Returns options for the mailer worker, specifying the queue to process.
     fn opts() -> sidekiq::WorkerOpts<Email, Self> {
         sidekiq::WorkerOpts::new().queue("mailer")

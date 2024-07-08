@@ -13,8 +13,8 @@
 //! }
 //!
 //! async fn current(
-//!     auth: auth::JWT,
-//!     State(ctx): State<AppContext>,
+//!     auth: auth::JWT<()>,
+//!     State(ctx): State<AppContext<()>>,
 //! ) -> Result<Response> {
 //!     format::json(TestResponse{ pid: auth.claims.pid})
 //! }
@@ -47,23 +47,25 @@ const AUTH_HEADER: &str = "authorization";
 // Define a struct to represent user authentication information serialized
 // to/from JSON
 #[derive(Debug, Deserialize, Serialize)]
-pub struct JWTWithUser<T: Authenticable> {
+pub struct JWTWithUser<T: Authenticable, E: Send + Sync + Clone> {
     pub claims: auth::jwt::UserClaims,
     pub user: T,
+    _extra: std::marker::PhantomData<E>,
 }
 
 // Implement the FromRequestParts trait for the Auth struct
 #[async_trait]
-impl<S, T> FromRequestParts<S> for JWTWithUser<T>
+impl<S, T, E> FromRequestParts<S> for JWTWithUser<T, E>
 where
-    AppContext: FromRef<S>,
+    E: Send + Sync + Clone,
+    AppContext<E>: FromRef<S>,
     S: Send + Sync,
     T: Authenticable,
 {
     type Rejection = Error;
 
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Error> {
-        let ctx: AppContext = AppContext::from_ref(state);
+        let ctx: AppContext<E> = AppContext::from_ref(state);
 
         let token = extract_token(get_jwt_from_config(&ctx)?, parts)?;
 
@@ -77,6 +79,7 @@ where
                 Ok(Self {
                     claims: claims.claims,
                     user,
+                    _extra: std::marker::PhantomData,
                 })
             }
             Err(_err) => {
@@ -89,21 +92,23 @@ where
 // Define a struct to represent user authentication information serialized
 // to/from JSON
 #[derive(Debug, Deserialize, Serialize)]
-pub struct JWT {
+pub struct JWT<T: Send + Sync + Clone> {
     pub claims: auth::jwt::UserClaims,
+    _extra: std::marker::PhantomData<T>,
 }
 
 // Implement the FromRequestParts trait for the Auth struct
 #[async_trait]
-impl<S> FromRequestParts<S> for JWT
+impl<S, T> FromRequestParts<S> for JWT<T>
 where
-    AppContext: FromRef<S>,
+    T: Send + Sync + Clone,
+    AppContext<T>: FromRef<S>,
     S: Send + Sync,
 {
     type Rejection = Error;
 
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Error> {
-        let ctx: AppContext = AppContext::from_ref(state); // change to ctx
+        let ctx: AppContext<T> = AppContext::from_ref(state); // change to ctx
 
         let token = extract_token(get_jwt_from_config(&ctx)?, parts)?;
 
@@ -112,6 +117,7 @@ where
         match auth::jwt::JWT::new(&jwt_secret.secret).validate(&token) {
             Ok(claims) => Ok(Self {
                 claims: claims.claims,
+                _extra: std::marker::PhantomData,
             }),
             Err(_err) => {
                 return Err(Error::Unauthorized("token is not valid".to_string()));
@@ -124,7 +130,7 @@ where
 ///
 /// # Errors
 /// Return an error when JWT token not configured
-fn get_jwt_from_config(ctx: &AppContext) -> LocoResult<&JWTConfig> {
+fn get_jwt_from_config<T: Send + Sync + Clone>(ctx: &AppContext<T>) -> LocoResult<&JWTConfig> {
     ctx.config
         .auth
         .as_ref()
@@ -199,16 +205,18 @@ pub fn extract_token_from_query(name: &str, parts: &Parts) -> LocoResult<String>
 // ---------------------------------------
 #[derive(Debug, Deserialize, Serialize)]
 // Represents the data structure for the API token.
-pub struct ApiToken<T: Authenticable> {
+pub struct ApiToken<T: Authenticable, E: Send + Sync + Clone> {
     pub user: T,
+    _extra: std::marker::PhantomData<E>,
 }
 
 #[async_trait]
 // Implementing the `FromRequestParts` trait for `ApiToken` to enable extracting
 // it from the request.
-impl<S, T> FromRequestParts<S> for ApiToken<T>
+impl<S, T, E> FromRequestParts<S> for ApiToken<T, E>
 where
-    AppContext: FromRef<S>,
+    E: Send + Sync + Clone,
+    AppContext<E>: FromRef<S>,
     S: Send + Sync,
     T: Authenticable,
 {
@@ -220,14 +228,17 @@ where
         let api_key = extract_token_from_header(&parts.headers)?;
 
         // Convert the state reference to the application context.
-        let state: AppContext = AppContext::from_ref(state);
+        let state: AppContext<E> = AppContext::from_ref(state);
 
         // Retrieve user information based on the API key from the database.
         let user = T::find_by_api_key(&state.db, &api_key)
             .await
             .map_err(|e| Error::Unauthorized(e.to_string()))?;
 
-        Ok(Self { user })
+        Ok(Self {
+            user,
+            _extra: std::marker::PhantomData,
+        })
     }
 }
 

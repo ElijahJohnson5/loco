@@ -13,7 +13,9 @@ lazy_static! {
 /// Currently axum not exposed the action type of the router. for hold extra
 /// information about routers we need to convert the `method` to string and
 /// capture the details
-pub fn method_action(method: &MethodRouter<AppContext>) -> Vec<http::Method> {
+pub fn method_action<T: Send + Sync + Clone>(
+    method: &MethodRouter<AppContext<T>>,
+) -> Vec<http::Method> {
     let method_str = format!("{method:?}");
 
     DESCRIBE_METHOD_ACTION

@@ -16,7 +16,7 @@ struct Health {
 
 /// Check the healthiness of the application bt ping to the redis and the DB to
 /// insure that connection
-async fn health(State(ctx): State<AppContext>) -> Result<Response> {
+async fn health<T: Send + Sync + Clone>(State(ctx): State<AppContext<T>>) -> Result<Response> {
     let mut is_ok = match ctx.db.ping().await {
         Ok(()) => true,
         Err(error) => {
@@ -34,6 +34,6 @@ async fn health(State(ctx): State<AppContext>) -> Result<Response> {
 }
 
 /// Defines and returns the health-related routes.
-pub fn routes() -> Routes {
+pub fn routes<T: Send + Sync + Clone + 'static>() -> Routes<T> {
     Routes::new().add("/_health", get(health))
 }

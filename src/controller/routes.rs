@@ -5,21 +5,30 @@ use tower::{Layer, Service};
 
 use super::describe;
 use crate::app::AppContext;
-#[derive(Clone, Default)]
-pub struct Routes {
+#[derive(Clone)]
+pub struct Routes<T: Send + Sync + Clone> {
     pub prefix: Option<String>,
-    pub handlers: Vec<Handler>,
+    pub handlers: Vec<Handler<T>>,
     // pub version: Option<String>,
 }
 
+impl<T: Send + Sync + Clone> Default for Routes<T> {
+    fn default() -> Self {
+        Self {
+            prefix: Default::default(),
+            handlers: Default::default(),
+        }
+    }
+}
+
 #[derive(Clone, Default)]
-pub struct Handler {
+pub struct Handler<T: Send + Sync + Clone> {
     pub uri: String,
-    pub method: axum::routing::MethodRouter<AppContext>,
+    pub method: axum::routing::MethodRouter<AppContext<T>>,
     pub actions: Vec<axum::http::Method>,
 }
 
-impl Routes {
+impl<T: Send + Sync + Clone + 'static> Routes<T> {
     /// Creates a new [`Routes`] instance with default settings.
     #[must_use]
     pub fn new() -> Self {
@@ -46,7 +55,7 @@ impl Routes {
     /// async fn ping() -> Result<Response> {
     ///     format::json(Health { ok: true })
     /// }
-    /// Routes::at("status").add("/_ping", get(ping));
+    /// Routes::<()>::at("status").add("/_ping", get(ping));
     ///    
     /// ````
     #[must_use]
@@ -75,10 +84,10 @@ impl Routes {
     /// async fn ping() -> Result<Response> {
     ///     format::json(Health { ok: true })
     /// }
-    /// Routes::new().add("/_ping", get(ping));
+    /// Routes::<()>::new().add("/_ping", get(ping));
     /// ````
     #[must_use]
-    pub fn add(mut self, uri: &str, method: axum::routing::MethodRouter<AppContext>) -> Self {
+    pub fn add(mut self, uri: &str, method: axum::routing::MethodRouter<AppContext<T>>) -> Self {
         describe::method_action(&method);
         self.handlers.push(Handler {
             uri: uri.to_owned(),
@@ -108,7 +117,7 @@ impl Routes {
     /// async fn ping() -> Result<Response> {
     ///     format::json(Health { ok: true })
     /// }
-    /// Routes::new().prefix("status").add("/_ping", get(ping));
+    /// Routes::<()>::new().prefix("status").add("/_ping", get(ping));
     /// ````
     #[must_use]
     pub fn prefix(mut self, uri: &str) -> Self {
@@ -130,7 +139,7 @@ impl Routes {
     /// async fn ping() -> Result<Response> {
     ///     format::json("Ok")
     /// }
-    /// Routes::new().prefix("status").add("/_ping", get(ping)).layer(TimeoutLayer::new(std::time::Duration::from_secs(5)));
+    /// Routes::<()>::new().prefix("status").add("/_ping", get(ping)).layer(TimeoutLayer::new(std::time::Duration::from_secs(5)));
     /// ```
     #[allow(clippy::needless_pass_by_value)]
     #[must_use]

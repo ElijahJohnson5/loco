@@ -20,7 +20,10 @@ pub const BANNER: &str = r"
                 https://loco.rs
 ";
 
-pub fn print_banner(boot_result: &BootResult, server_config: &ServeParams) {
+pub fn print_banner<T: Send + Sync + Clone>(
+    boot_result: &BootResult<T>,
+    server_config: &ServeParams,
+) {
     let ctx = &boot_result.app_context;
     println!("{BANNER}");
     let config = &ctx.config;

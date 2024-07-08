@@ -35,7 +35,11 @@ use crate::{
 /// lifetime.
 #[derive(Clone)]
 #[allow(clippy::module_name_repetitions)]
-pub struct AppContext {
+pub struct AppContext<T>
+where
+    T: Send + Sync,
+    T: Clone,
+{
     /// The environment in which the application is running.
     pub environment: Environment,
     #[cfg(feature = "with-db")]
@@ -51,6 +55,8 @@ pub struct AppContext {
     pub storage: Arc<Storage>,
     // Cache instance for the application
     pub cache: Arc<cache::Cache>,
+
+    pub extra: Option<T>,
 }
 
 /// A trait that defines hooks for customizing and extending the behavior of a
@@ -60,7 +66,9 @@ pub struct AppContext {
 /// the application's routing, worker connections, task registration, and
 /// database actions according to their specific requirements and use cases.
 #[async_trait]
-pub trait Hooks {
+pub trait Hooks: Send + Sync {
+    type ExtraAppContext: Send + Sync + Clone + 'static;
+
     /// Defines the composite app version
     #[must_use]
     fn app_version() -> String {
@@ -101,7 +109,10 @@ pub trait Hooks {
     ///
     /// # Errors
     /// Could not boot the application
-    async fn boot(mode: StartMode, environment: &Environment) -> Result<BootResult>;
+    async fn boot(
+        mode: StartMode,
+        environment: &Environment,
+    ) -> Result<BootResult<Self::ExtraAppContext>>;
 
     /// Start serving the Axum web application on the specified address and
     /// port.
@@ -137,42 +148,49 @@ pub trait Hooks {
     ///
     /// # Errors
     /// Axum router error
-    async fn after_routes(router: AxumRouter, _ctx: &AppContext) -> Result<AxumRouter> {
+    async fn after_routes(
+        router: AxumRouter,
+        _ctx: &AppContext<Self::ExtraAppContext>,
+    ) -> Result<AxumRouter> {
         Ok(router)
     }
 
     /// Provide a list of initializers
     /// An initializer can be used to seamlessly add functionality to your app
     /// or to initialize some aspects of it.
-    async fn initializers(_ctx: &AppContext) -> Result<Vec<Box<dyn Initializer>>> {
+    async fn initializers(
+        _ctx: &AppContext<Self::ExtraAppContext>,
+    ) -> Result<Vec<Box<dyn Initializer<Self::ExtraAppContext>>>> {
         Ok(vec![])
     }
 
     /// Calling the function before run the app
     /// You can now code some custom loading of resources or other things before
     /// the app runs
-    async fn before_run(_app_context: &AppContext) -> Result<()> {
+    async fn before_run(_app_context: &AppContext<Self::ExtraAppContext>) -> Result<()> {
         Ok(())
     }
 
     /// Defines the application's routing configuration.
-    fn routes(_ctx: &AppContext) -> AppRoutes;
+    fn routes(_ctx: &AppContext<Self::ExtraAppContext>) -> AppRoutes<Self::ExtraAppContext>;
 
     // Provides the options to change Loco [`AppContext`] after initialization.
-    async fn after_context(ctx: AppContext) -> Result<AppContext> {
+    async fn after_context(
+        ctx: AppContext<Self::ExtraAppContext>,
+    ) -> Result<AppContext<Self::ExtraAppContext>> {
         Ok(ctx)
     }
 
     #[cfg(feature = "channels")]
     /// Register channels endpoints to the application routers
-    fn register_channels(_ctx: &AppContext) -> AppChannels;
+    fn register_channels(_ctx: &AppContext<Self::ExtraAppContext>) -> AppChannels;
 
     /// Connects custom workers to the application using the provided
     /// [`Processor`] and [`AppContext`].
-    fn connect_workers<'a>(p: &'a mut Processor, ctx: &'a AppContext);
+    fn connect_workers<'a>(p: &'a mut Processor, ctx: &'a AppContext<Self::ExtraAppContext>);
 
     /// Registers custom tasks with the provided [`Tasks`] object.
-    fn register_tasks(tasks: &mut Tasks);
+    fn register_tasks(tasks: &mut Tasks<Self::ExtraAppContext>);
 
     /// Truncates the database as required. Users should implement this
     /// function. The truncate controlled from the [`crate::config::Database`]
@@ -191,21 +209,21 @@ pub trait Hooks {
 /// Initializers should be kept in `src/initializers/`
 #[async_trait]
 // <snip id="initializers-trait">
-pub trait Initializer: Sync + Send {
+pub trait Initializer<T: Send + Sync + Clone>: Sync + Send {
     /// The initializer name or identifier
     fn name(&self) -> String;
 
     /// Occurs after the app's `before_run`.
     /// Use this to for one-time initializations, load caches, perform web
     /// hooks, etc.
-    async fn before_run(&self, _app_context: &AppContext) -> Result<()> {
+    async fn before_run(&self, _app_context: &AppContext<T>) -> Result<()> {
         Ok(())
     }
 
     /// Occurs after the app's `after_routes`.
     /// Use this to compose additional functionality and wire it into an Axum
     /// Router
-    async fn after_routes(&self, router: AxumRouter, _ctx: &AppContext) -> Result<AxumRouter> {
+    async fn after_routes(&self, router: AxumRouter, _ctx: &AppContext<T>) -> Result<AxumRouter> {
         Ok(router)
     }
 }
